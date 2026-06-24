@@ -1,0 +1,63 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Database (local dev db)
+*.db
+*.sqlite3
+*.sqlite
+
+# RAG Debugger runtime
+.rag-debugger/
+rag_debugger.db
+
+# Node / Frontend
+node_modules/
+dist/
+.next/
+frontend/.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Secrets (belt-and-suspenders)
+*.pem
+*.key
+*_rsa
+secrets/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
