@@ -15,7 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import get_db
+from backend.db.database import AsyncSessionFactory, get_db
 from backend.models.config import PipelineConfig, QueryBatch
 from backend.models.session import CreateSessionRequest, SessionListItem, SessionStatusResponse
 from backend.services.session_service import SessionService
@@ -26,6 +26,23 @@ router = APIRouter()
 
 def get_session_service(db: AsyncSession = Depends(get_db)) -> SessionService:
     return SessionService(db)
+
+
+async def _run_diagnosis_with_own_db(
+    session_id: str,
+    pipeline_config: PipelineConfig,
+    query_batch: QueryBatch,
+    redact_pii: bool,
+) -> dict:
+    """Background task that creates its own DB session — avoids closed-session errors."""
+    async with AsyncSessionFactory() as db:
+        service = SessionService(db)
+        await service.run_diagnosis(
+            session_id=session_id,
+            pipeline_config=pipeline_config,
+            query_batch=query_batch,
+            redact_pii=redact_pii,
+        )
 
 
 @router.post("/sessions", status_code=202)
@@ -57,16 +74,16 @@ async def create_session(
             detail={"message": "Invalid query batch", "errors": e.errors(include_url=False)},
         ) from e
 
-    # Create session record
+    # Create session record (using request's DB session — still open here)
     session = await service.create_session(
         pipeline_config=pipeline_config,
         query_batch=query_batch,
         redact_pii=body.redact_pii,
     )
 
-    # Run diagnosis in background
+    # Run diagnosis in background with its OWN DB session
     background_tasks.add_task(
-        service.run_diagnosis,
+        _run_diagnosis_with_own_db,
         session_id=session.id,
         pipeline_config=pipeline_config,
         query_batch=query_batch,
@@ -104,12 +121,13 @@ async def get_session(
     return session
 
 
-@router.delete("/sessions/{session_id}", status_code=204)
+@router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: UUID,
     service: SessionService = Depends(get_session_service),
-) -> None:
+) -> dict:
     """Delete a session and all associated data."""
     deleted = await service.delete_session(session_id=str(session_id))
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    return {"deleted": str(session_id)}

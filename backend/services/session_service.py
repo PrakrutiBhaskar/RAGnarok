@@ -49,19 +49,23 @@ class SessionService:
         raise ValueError(f"Unsupported vector DB provider: {provider}")
 
     def _build_embedder(self, config: PipelineConfig):
-        from backend.adapters.embeddings.openai_embed import OpenAIEmbeddingAdapter
         provider = config.embedding.provider
         if provider == "openai":
+            from backend.adapters.embeddings.openai_embed import OpenAIEmbeddingAdapter
             return OpenAIEmbeddingAdapter(config.embedding)
-        # TODO: add Cohere, HuggingFace
+        if provider == "huggingface":
+            from backend.adapters.embeddings.huggingface_embed import HuggingFaceEmbeddingAdapter
+            return HuggingFaceEmbeddingAdapter(config.embedding)
         raise ValueError(f"Unsupported embedding provider: {provider}")
 
     def _build_llm(self, config: PipelineConfig):
-        from backend.adapters.llms.openai_llm import OpenAILLMAdapter
         provider = config.llm.provider
         if provider == "openai":
+            from backend.adapters.llms.openai_llm import OpenAILLMAdapter
             return OpenAILLMAdapter(config.llm)
-        # TODO: add Anthropic, Ollama
+        if provider == "groq":
+            from backend.adapters.llms.groq_llm import GroqLLMAdapter
+            return GroqLLMAdapter(config.llm)
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
     # ── Create session record ─────────────────────────────────────────────────

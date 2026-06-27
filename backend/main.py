@@ -5,6 +5,14 @@ All routes registered here. Serves as the entry point for the local web UI serve
 
 from __future__ import annotations
 
+from pathlib import Path
+from dotenv import load_dotenv
+# Search for .env in multiple locations
+for _env_path in [Path(__file__).parent.parent / ".env", Path.cwd() / ".env", Path(".env")]:
+    if _env_path.exists():
+        load_dotenv(_env_path, override=False)
+        break
+
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator

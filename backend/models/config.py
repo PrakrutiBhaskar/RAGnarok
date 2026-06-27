@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 VectorDBProvider = Literal["chroma", "pinecone", "qdrant"]
 EmbeddingProvider = Literal["openai", "cohere", "huggingface"]
-LLMProvider = Literal["openai", "anthropic", "ollama"]
+LLMProvider = Literal["openai", "anthropic", "ollama", "groq"]
 ChunkingStrategy = Literal["fixed", "sentence", "recursive", "semantic"]
 
 

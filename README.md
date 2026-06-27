@@ -1,5 +1,5 @@
 # RAGnarok
-RAGnarok: The End of Hallucinations . An RAG Quality Debugger &amp; Debugging System 
+RAGnarok: The End of Hallucinations . An RAG Failure Attribution  &amp;  Quality Debugger
 
 > Automated diagnostic tool for RAG pipeline failure attribution — built for ML/AI engineers.
 
@@ -9,7 +9,7 @@ RAGnarok: The End of Hallucinations . An RAG Quality Debugger &amp; Debugging Sy
 
 ## What it does
 
-RAGnosis answers one question: **when your RAG pipeline returns a wrong answer, is it the retrieval layer or the generation layer that failed?**
+RAGnarok answers one question: **when your RAG pipeline returns a wrong answer, is it the retrieval layer or the generation layer that failed?**
 
 It does this through **oracle injection testing**: retrieving the best possible context via a BM25 oracle (completely independent of your vector DB) and injecting it into your LLM. If the LLM succeeds with oracle context but fails with retrieved context → retrieval failure. If it fails with both → generation failure.
 
