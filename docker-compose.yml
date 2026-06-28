@@ -1,4 +1,12 @@
 services:
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+
   ragnarok:
     build: .
     ports:
@@ -8,19 +16,12 @@ services:
     environment:
       - RAG_DEBUGGER_HOME=/data
       - RAG_DEBUGGER_LOG_LEVEL=${RAG_DEBUGGER_LOG_LEVEL:-INFO}
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
     volumes:
       - ragnarok-data:/data
     depends_on:
-      chroma:
-        condition: service_started
-    restart: unless-stopped
-
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8000:8000"
-    volumes:
-      - chroma-data:/chroma/chroma
+      - chroma
     restart: unless-stopped
 
 volumes:
