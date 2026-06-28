@@ -259,13 +259,20 @@ class SessionService:
         )
 
         # Generation diagnosis (oracle injection)
+        # Re-retrieve oracle chunks directly from BM25 engine using the typed result
+        from backend.core.bm25_engine import BM25Result
+        oracle_bm25_chunks = [
+            BM25Result(
+                chunk_id=c.chunk_id,
+                text=c.text,
+                score=c.bm25_score or 0.0,
+                metadata=c.metadata,
+            )
+            for c in r_result.oracle_chunks
+        ]
         g_result = await generation_engine.diagnose(
             query=query_obj.query,
-            oracle_chunks=[
-                type('BM25Result', (), {'chunk_id': c.chunk_id, 'text': c.text,
-                     'score': c.bm25_score or 0.0, 'metadata': c.metadata})()
-                for c in r_result.oracle_chunks
-            ],
+            oracle_chunks=oracle_bm25_chunks,
             actual_answer=query_obj.actual_answer,
             expected_answer=query_obj.expected_answer,
             redact_pii=redact_pii,
@@ -403,11 +410,17 @@ class SessionService:
         if not orm:
             return None
 
-        # Count completed queries
+        # Count completed queries AND compute failure distribution from DB
         q_result = await self._db.execute(
             select(QueryDiagnosisORM).where(QueryDiagnosisORM.session_id == session_id)
         )
-        completed = len(q_result.scalars().all())
+        query_rows = q_result.scalars().all()
+        completed = len(query_rows)
+
+        failure_distribution: dict[str, int] = {}
+        for row in query_rows:
+            diag = row.final_diagnosis
+            failure_distribution[diag] = failure_distribution.get(diag, 0) + 1
 
         return SessionStatusResponse(
             id=orm.id,
@@ -416,7 +429,7 @@ class SessionService:
             query_count=orm.query_count,
             completed_queries=completed,
             overall_confidence=orm.overall_confidence,
-            failure_distribution={},
+            failure_distribution=failure_distribution,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
         )
@@ -440,8 +453,20 @@ class SessionService:
             .offset(offset)
         )
         sessions = result.scalars().all()
-        return [
-            SessionListItem(
+        items = []
+        for s in sessions:
+            # Compute dominant failure from query diagnoses
+            from sqlalchemy import func as sqlfunc
+            dist_result = await self._db.execute(
+                select(QueryDiagnosisORM.final_diagnosis, sqlfunc.count().label("cnt"))
+                .where(QueryDiagnosisORM.session_id == s.id)
+                .group_by(QueryDiagnosisORM.final_diagnosis)
+                .order_by(sqlfunc.count().desc())
+                .limit(1)
+            )
+            top = dist_result.first()
+            dominant = top[0] if top else None
+            items.append(SessionListItem(
                 id=s.id,
                 created_at=s.created_at,
                 status=s.status,
@@ -450,11 +475,10 @@ class SessionService:
                 db_type=s.db_type,
                 embedding_provider=s.embedding_provider,
                 llm_provider=s.llm_provider,
-                dominant_failure=None,
+                dominant_failure=dominant,
                 overall_confidence=s.overall_confidence,
-            )
-            for s in sessions
-        ]
+            ))
+        return items
 
     async def delete_session(self, session_id: str) -> bool:
         result = await self._db.execute(

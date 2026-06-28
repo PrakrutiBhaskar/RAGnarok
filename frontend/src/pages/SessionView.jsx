@@ -84,6 +84,11 @@ export default function SessionView({ sessionId }) {
           clearInterval(pollRef.current)
           esRef.current?.close()
           await loadReport()
+        } else if (s.status === 'failed') {
+          clearInterval(pollRef.current)
+          esRef.current?.close()
+          setError(`Session failed. Check server logs for details.`)
+          setLoading(false)
         }
       } catch { /* ignore poll errors */ }
     }, 2000)

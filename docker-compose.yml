@@ -1,0 +1,28 @@
+services:
+  ragnarok:
+    build: .
+    ports:
+      - "8765:8765"
+    env_file:
+      - .env
+    environment:
+      - RAG_DEBUGGER_HOME=/data
+      - RAG_DEBUGGER_LOG_LEVEL=${RAG_DEBUGGER_LOG_LEVEL:-INFO}
+    volumes:
+      - ragnarok-data:/data
+    depends_on:
+      chroma:
+        condition: service_started
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+
+volumes:
+  ragnarok-data:
+  chroma-data:
