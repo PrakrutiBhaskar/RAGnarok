@@ -17,11 +17,11 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.database import Base
+from backend.timeutils import utcnow
 
 
 def _uuid() -> str:
@@ -32,8 +32,8 @@ class DiagnosisSessionORM(Base):
     __tablename__ = "diagnosis_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     pipeline_config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     pipeline_config_snapshot: Mapped[dict | None] = mapped_column(JSON)
     query_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -88,7 +88,7 @@ class QueryDiagnosisORM(Base):
     bm25_score: Mapped[float | None] = mapped_column(Float)
     expected_answer_in_corpus: Mapped[bool | None] = mapped_column(Boolean)
     evidence: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     session: Mapped[DiagnosisSessionORM] = relationship("DiagnosisSessionORM", back_populates="query_diagnoses")
 
@@ -109,7 +109,7 @@ class RecommendationORM(Base):
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     impact_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     effort_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     session: Mapped[DiagnosisSessionORM] = relationship("DiagnosisSessionORM", back_populates="recommendations")
 
@@ -118,8 +118,8 @@ class PipelineConfigCacheORM(Base):
     __tablename__ = "pipeline_config_cache"
 
     hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    first_seen: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     session_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     db_type: Mapped[str | None] = mapped_column(String(50))
     embedding_provider: Mapped[str | None] = mapped_column(String(50))
@@ -138,4 +138,4 @@ class CalibrationResultORM(Base):
     p50_threshold: Mapped[float] = mapped_column(Float, nullable=False)
     p75_threshold: Mapped[float] = mapped_column(Float, nullable=False)
     sample_size: Mapped[int] = mapped_column(Integer, nullable=False)
-    calibrated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    calibrated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)

@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install package + dev/test extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,chroma,huggingface]"
+
+      # The test suite is the hard gate — it must pass. Coverage floor is
+      # enforced via --cov-fail-under in pyproject.toml's pytest addopts.
+      - name: Run tests with coverage
+        run: pytest
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage
+
+  lint:
+    name: Lint & type-check (informational)
+    runs-on: ubuntu-latest
+    # This job is intentionally non-blocking for now: the codebase has a
+    # backlog of pre-existing ruff/mypy findings (mostly missing type
+    # annotations under strict mypy, and a few bare except/broad-except
+    # patterns under ruff's S rules) that haven't been triaged yet. It
+    # still runs on every PR so the backlog is visible and doesn't grow
+    # silently, without blocking merges on unrelated work. Flip
+    # `continue-on-error` to `false` once the backlog is cleared.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: ruff check
+        continue-on-error: true
+        run: ruff check backend/ tests/
+
+      - name: mypy
+        continue-on-error: true
+        run: mypy backend/
+
+  security:
+    name: Security scan (informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: bandit (static security analysis)
+        continue-on-error: true
+        run: bandit -r backend/ -ll
+
+      - name: pip-audit (dependency vulnerabilities)
+        continue-on-error: true
+        run: pip-audit

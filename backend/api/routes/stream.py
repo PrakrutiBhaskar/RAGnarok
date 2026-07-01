@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.database import get_db
 from backend.models.report import StreamEvent
 from backend.services.session_service import SessionService
+from backend.timeutils import utcnow
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -97,7 +97,7 @@ async def stream_session(
                     heartbeat = StreamEvent(
                         event="heartbeat",
                         session_id=str(session_id),
-                        timestamp=datetime.utcnow(),
+                        timestamp=utcnow(),
                     )
                     yield heartbeat.to_sse()
                     last_heartbeat = now

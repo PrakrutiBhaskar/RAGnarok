@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     max_corpus_chunks: int = Field(100_000, alias="RAG_DEBUGGER_MAX_CORPUS_CHUNKS")
     sql_echo: bool = Field(False, alias="RAG_DEBUGGER_SQL_ECHO")
 
+    # Opt-in API key auth for the /v1/* surface. Unset by default (matches
+    # the tool's primary localhost-only use case); set this when deploying
+    # beyond 127.0.0.1 (e.g. via docker-compose for shared/team use) — see
+    # backend/api/middleware/auth.py.
+    api_key: str | None = Field(None, alias="RAG_DEBUGGER_API_KEY")
+
     # ── Server Settings ───────────────────────────────────────────────────────
     host: str = "127.0.0.1"
     port: int = 8765

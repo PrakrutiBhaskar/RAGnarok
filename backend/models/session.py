@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from backend.timeutils import utcnow
 
 
 SessionStatus = Literal["pending", "running", "complete", "failed", "partial"]
@@ -70,10 +72,9 @@ class QueryDiagnosisResult(BaseModel):
     # Raw evidence for transparency
     evidence: dict[str, Any] = Field(default_factory=dict)
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class Recommendation(BaseModel):
@@ -90,7 +91,7 @@ class Recommendation(BaseModel):
     rank: int = Field(..., ge=1)
     impact_score: float = Field(0.0, ge=0.0, le=1.0)
     effort_score: float = Field(0.0, ge=0.0, le=1.0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     @property
     def priority_score(self) -> float:
@@ -103,8 +104,8 @@ class DiagnosisSession(BaseModel):
     """A complete diagnostic session."""
 
     id: UUID = Field(default_factory=uuid4)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     pipeline_config_hash: str
     pipeline_config_snapshot: dict[str, Any]

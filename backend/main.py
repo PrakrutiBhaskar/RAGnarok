@@ -20,6 +20,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import get_settings
 from backend.db.database import check_db_connection, close_db, init_db
@@ -40,6 +41,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     logger.info("RAG Debugger %s starting up", settings.version)
+
+    if settings.host not in ("127.0.0.1", "localhost") and not settings.api_key:
+        logger.warning(
+            "Server is bound to %s (not localhost) with no RAG_DEBUGGER_API_KEY "
+            "set — every /v1/* endpoint is reachable by anyone with network "
+            "access, with no authentication. Set RAG_DEBUGGER_API_KEY to require "
+            "an X-API-Key header, or bind to 127.0.0.1 for local-only use.",
+            settings.host,
+        )
 
     # Initialize database
     await init_db()
@@ -69,6 +79,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Optional API key auth for /v1/* — opt-in via RAG_DEBUGGER_API_KEY.
+    # (ApiKeyAuthMiddleware explicitly skips OPTIONS requests, so its
+    # position relative to CORSMiddleware below doesn't affect preflight.)
+
     # CORS — only localhost origins (local tool, no CSRF risk)
     app.add_middleware(
         CORSMiddleware,
@@ -82,6 +96,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    if settings.api_key:
+        from backend.api.middleware.auth import ApiKeyAuthMiddleware
+        app.add_middleware(ApiKeyAuthMiddleware, api_key=settings.api_key)
+        logger.info("API key auth enabled for /v1/* (RAG_DEBUGGER_API_KEY is set)")
 
     # Register routes
     from backend.api.routes import sessions, reports, stream, validate
@@ -99,14 +118,28 @@ def create_app() -> FastAPI:
             "db": "ok" if db_ok else "error",
         })
 
-    @app.get("/", tags=["Root"])
-    async def root() -> JSONResponse:
-        return JSONResponse({
-            "name": "RAG Quality Debugger",
-            "version": settings.version,
-            "docs": "/docs",
-            "ui": f"http://localhost:{settings.port}",
-        })
+    # Serve the built React dashboard, if present (Docker image bakes this in
+    # via the frontend-builder stage; local dev typically runs `vite dev` on
+    # a separate port instead, so this is a no-op unless frontend/dist exists).
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    if frontend_dist.is_dir():
+        app.mount(
+            "/",
+            StaticFiles(directory=str(frontend_dist), html=True),
+            name="dashboard",
+        )
+        logger.info("Serving frontend dashboard from %s", frontend_dist)
+    else:
+        @app.get("/", tags=["Root"])
+        async def root() -> JSONResponse:
+            return JSONResponse({
+                "name": "RAG Quality Debugger",
+                "version": settings.version,
+                "docs": "/docs",
+                "ui": f"http://localhost:{settings.port}",
+                "note": "frontend/dist not found — run `npm run build` in frontend/ "
+                        "or use the Docker image, which builds it automatically.",
+            })
 
     return app
 

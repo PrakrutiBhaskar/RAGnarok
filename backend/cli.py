@@ -33,11 +33,26 @@ def _load_yaml(path: Path) -> dict:
     except ImportError:
         err_console.print("[red]pyyaml not installed. Run: pip install pyyaml[/red]")
         raise typer.Exit(1)
+
+    from backend.security.pickle_detector import PickleDetectedError, check_bytes
+    try:
+        check_bytes(path.read_bytes(), source=str(path))
+    except PickleDetectedError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
     with open(path) as f:
         return yaml.safe_load(f)
 
 
 def _load_json(path: Path) -> list:
+    from backend.security.pickle_detector import PickleDetectedError, check_bytes
+    try:
+        check_bytes(path.read_bytes(), source=str(path))
+    except PickleDetectedError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
     with open(path) as f:
         data = json.load(f)
     return data if isinstance(data, list) else data.get("queries", [])

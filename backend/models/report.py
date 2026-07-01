@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from backend.timeutils import utcnow
+
 from backend.models.session import (
     FinalDiagnosis,
     QueryDiagnosisResult,
@@ -37,7 +39,7 @@ class DiagnosisReport(BaseModel):
     report_version: str = "1.0"
     session_id: UUID
     pipeline_name: str
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=utcnow)
     status: SessionStatus
     duration_seconds: float | None = None
 
@@ -67,7 +69,7 @@ class StreamEvent(BaseModel):
     diagnosis: str | None = None
     confidence: float | None = None
     error: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
 
     def to_sse(self) -> str:
         """Format as SSE wire format."""

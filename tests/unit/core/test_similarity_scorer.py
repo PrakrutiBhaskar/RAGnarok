@@ -83,3 +83,48 @@ class TestSimilarityScorer:
         c = make_vec(16, -1.0)
         results = scorer.score(q, [("c1", c)])
         assert -1.0 <= results[0].cosine_similarity <= 1.0
+
+
+class TestAutoCalibrationForUnknownModels:
+    """calibrate_from_sample() was implemented and unit-tested in isolation
+    on ThresholdCalibrator but had zero call sites anywhere in the codebase.
+    These tests confirm SimilarityScorer actually invokes it for unknown
+    models once enough samples have been observed."""
+
+    def test_known_model_never_accumulates_samples(self):
+        scorer = SimilarityScorer(model_id="text-embedding-3-small")
+        q = make_vec(8, 1.0)
+        for _ in range(40):
+            scorer.score(q, [("c1", make_vec(8, 0.5))])
+        assert scorer._sample_buffer == []  # lookup-table models skip this entirely
+
+    def test_unknown_model_starts_on_fallback_thresholds(self):
+        scorer = SimilarityScorer(model_id="some-brand-new-embedding-model")
+        assert scorer.thresholds.is_calibrated is False
+        assert scorer.thresholds.model_id == "some-brand-new-embedding-model"
+
+    def test_unknown_model_auto_calibrates_after_enough_samples(self):
+        scorer = SimilarityScorer(model_id="some-brand-new-embedding-model")
+        q = make_vec(8, 1.0)
+
+        # Fewer than 30 samples: still uncalibrated
+        for _ in range(29):
+            scorer.score(q, [("c1", make_vec(8, 0.5))])
+        assert scorer.thresholds.is_calibrated is False
+
+        # One more query's worth of chunks pushes it over 30 total samples
+        scorer.score(q, [("c2", make_vec(8, 0.9)), ("c3", make_vec(8, 0.1))])
+        assert scorer.thresholds.is_calibrated is True
+        assert scorer.thresholds.sample_size >= 30
+
+    def test_stops_accumulating_once_calibrated(self):
+        scorer = SimilarityScorer(model_id="some-brand-new-embedding-model")
+        q = make_vec(8, 1.0)
+        for _ in range(35):
+            scorer.score(q, [("c1", make_vec(8, 0.5))])
+
+        assert scorer.thresholds.is_calibrated is True
+        buffer_size_at_calibration = len(scorer._sample_buffer)
+
+        scorer.score(q, [("c1", make_vec(8, 0.5))])
+        assert len(scorer._sample_buffer) == buffer_size_at_calibration  # no further growth

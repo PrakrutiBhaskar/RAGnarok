@@ -110,7 +110,7 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--cov=backend --cov-report=term-missing --cov-fail-under=45"
+addopts = "--cov=backend --cov-report=term-missing --cov-fail-under=70"
 
 # ── Coverage ─────────────────────────────────────────────────────────────────
 [tool.coverage.run]

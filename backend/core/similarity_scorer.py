@@ -29,17 +29,49 @@ class SimilarityScorer:
     """
     Scores retrieved chunks against calibrated per-model thresholds.
     Computes cosine similarity and classifies relevance.
+
+    For models in the lookup table, thresholds are fixed and known-good.
+    For unknown models, this scorer starts on generic fallback thresholds
+    and — since a `SimilarityScorer` is instantiated once per diagnostic
+    session and sees every query's similarity scores — auto-calibrates
+    against the real observed distribution once enough samples (30+) have
+    been seen, via `ThresholdCalibrator.calibrate_from_sample`. This means
+    later queries in a long session against an unrecognized model get
+    genuinely calibrated thresholds instead of generic defaults for the
+    whole run.
     """
+
+    _MIN_SAMPLES_FOR_CALIBRATION = 30
 
     def __init__(self, model_id: str) -> None:
         self._model_id = model_id
         self._calibrator = ThresholdCalibrator()
         self._thresholds: ThresholdSet | None = None
+        self._sample_buffer: list[float] = []
+        self._is_known_model = self._calibrator.is_known_model(model_id)
 
     def _get_thresholds(self) -> ThresholdSet:
         if self._thresholds is None:
             self._thresholds = self._calibrator.get_thresholds(self._model_id)
         return self._thresholds
+
+    def _record_samples_and_maybe_calibrate(self, cosine_sims: list[float]) -> None:
+        """For unknown models only: accumulate observed similarities and
+        auto-calibrate once enough have been seen. No-op for known models,
+        since the lookup table is already trustworthy."""
+        if self._is_known_model or self._thresholds is not None and self._thresholds.is_calibrated:
+            return
+
+        self._sample_buffer.extend(cosine_sims)
+        if len(self._sample_buffer) >= self._MIN_SAMPLES_FOR_CALIBRATION:
+            self._thresholds = self._calibrator.calibrate_from_sample(
+                self._model_id, self._sample_buffer
+            )
+            logger.info(
+                "SimilarityScorer: auto-calibrated thresholds for unknown model "
+                "'%s' from %d observed similarity samples this session",
+                self._model_id, len(self._sample_buffer),
+            )
 
     def score(
         self,
@@ -91,6 +123,7 @@ class SimilarityScorer:
             ))
 
         scores.sort(key=lambda s: s.cosine_similarity, reverse=True)
+        self._record_samples_and_maybe_calibrate([s.cosine_similarity for s in scores])
         return scores
 
     def score_from_retrieved(

@@ -231,13 +231,16 @@ _DATA_QUALITY_FAILURE_RECS: list[RecommendationTemplate] = [
         impact_score=0.95,
         effort_score=0.80,
         code_snippet=(
-            "# Identify missing topics using failing queries:\n"
-            "from rag_debugger import analyze_corpus_gaps\n\n"
-            "gaps = analyze_corpus_gaps(\n"
-            "    failing_queries=failing_queries,\n"
-            "    corpus=your_corpus,\n"
-            ")\n"
-            "print(gaps.missing_topics)"
+            "# Cross-reference failing queries against your corpus manually:\n"
+            "# 1. Pull the `expected_answer_in_corpus` field from each query's\n"
+            "#    diagnosis report — it's False for every data-quality failure.\n"
+            "# 2. Group those queries by topic/keyword to find the gap pattern.\n"
+            "# 3. Confirm by grepping your source docs for the topic before\n"
+            "#    concluding it's genuinely missing (vs. a chunking artifact).\n\n"
+            "failing = [q for q in report.query_diagnoses\n"
+            "           if q.final_diagnosis == 'data_quality_failure']\n"
+            "for q in failing:\n"
+            "    print(q.query_text, '->', q.expected_answer)"
         ),
     ),
     RecommendationTemplate(

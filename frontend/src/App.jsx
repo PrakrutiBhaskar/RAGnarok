@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import SessionView from './pages/SessionView'
 import EmptyState from './pages/EmptyState'
@@ -32,13 +32,23 @@ export default function App() {
 
   useEffect(() => {
     loadSessions()
-    // Poll for running sessions every 3s
+  }, [loadSessions])
+
+  // Poll for running sessions every 3s. This is a stable interval — it does
+  // NOT depend on `sessions`, so it isn't torn down and recreated on every
+  // fetch. It reads the latest session list via the ref below instead.
+  const sessionsRef = useRef(sessions)
+  useEffect(() => { sessionsRef.current = sessions }, [sessions])
+
+  useEffect(() => {
     const interval = setInterval(() => {
-      const hasRunning = sessions.some(s => s.status === 'running' || s.status === 'pending')
+      const hasRunning = sessionsRef.current.some(
+        s => s.status === 'running' || s.status === 'pending'
+      )
       if (hasRunning) loadSessions()
     }, 3000)
     return () => clearInterval(interval)
-  }, [loadSessions, sessions])
+  }, [loadSessions])
 
   function handleSessionCreated(id) {
     setActiveId(id)

@@ -9,6 +9,10 @@ services:
 
   ragnarok:
     build: .
+    # This binds 8765 on the host — reachable by anyone on your network,
+    # not just localhost. Set RAG_DEBUGGER_API_KEY below (or in .env) unless
+    # you're running this on a machine you trust every other user/process
+    # of. See the "Security" section in README.md.
     ports:
       - "8765:8765"
     env_file:
@@ -16,6 +20,7 @@ services:
     environment:
       - RAG_DEBUGGER_HOME=/data
       - RAG_DEBUGGER_LOG_LEVEL=${RAG_DEBUGGER_LOG_LEVEL:-INFO}
+      - RAG_DEBUGGER_API_KEY=${RAG_DEBUGGER_API_KEY:-}
       - CHROMA_HOST=chroma
       - CHROMA_PORT=8000
     volumes:

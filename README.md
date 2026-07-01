@@ -65,11 +65,13 @@ python examples/quickstart.py
 
 ## Supported Providers
 
-**Vector Databases:** ChromaDB, Pinecone, Qdrant *(more coming)*
+**Vector Databases:** ChromaDB. *(Pinecone and Qdrant are defined in the config schema and validated, but have no adapter implementation yet — configuring them will raise a clear `ValueError` at session-creation time, not a silent failure.)*
 
-**Embeddings:** OpenAI (text-embedding-3-small/large, ada-002), Cohere, HuggingFace sentence-transformers
+**Embeddings:** OpenAI (text-embedding-3-small/large, ada-002), HuggingFace sentence-transformers (local, no API key required). *(Cohere is schema-defined but not yet implemented.)*
 
-**LLMs:** OpenAI (GPT-4o-mini, GPT-4o), Anthropic (Claude), Ollama (local)
+**LLMs:** OpenAI (GPT-4o-mini, GPT-4o), Groq (Llama 3.3, free tier). *(Anthropic and Ollama are schema-defined but not yet implemented.)*
+
+Implementing a new provider means writing one adapter class against the interfaces in `backend/adapters/base.py` — see the existing Chroma/OpenAI/HuggingFace/Groq adapters for the pattern. PRs welcome.
 
 ## Pipeline Config
 
@@ -113,6 +115,7 @@ prompt:
 - **Pickle format rejected** at all input surfaces (arbitrary code execution prevention)
 - Optional `--redact-pii` flag strips emails, phone numbers, SSNs, Aadhaar, PAN cards from chunks before any LLM calls
 - LLM judge (external data sharing) requires explicit `llm_judge_acknowledged: true` in config
+- **No authentication by default.** RAGnarok is designed as a local tool bound to `127.0.0.1` — fine for solo use, but the same app is what `docker-compose.yml` starts bound to `0.0.0.0:8765`. If you deploy it anywhere reachable beyond your own machine, set `RAG_DEBUGGER_API_KEY` (every `/v1/*` request then requires a matching `X-API-Key` header) or put it behind your own auth proxy. The server logs a warning on startup if it's bound off-localhost with no API key set.
 
 ## Development
 
@@ -172,9 +175,14 @@ rag-debugger/
 
 ## Roadmap
 
-- [ ] Phase 2: Pinecone + Qdrant adapters, Anthropic + Ollama LLM adapters
-- [ ] Phase 3: React dashboard UI, RAGAS evaluator integration
-- [ ] Phase 4: Pattern-level analysis, Alembic migrations, Docker Compose
+- [x] React dashboard UI (`frontend/`), served automatically by the Docker image
+- [x] Docker Compose (bundles a Chroma sidecar)
+- [ ] Pinecone + Qdrant vector DB adapters
+- [ ] Anthropic + Ollama + Cohere adapters
+- [ ] Alembic migrations (dependency is installed; schema currently uses `create_all` — fine for local/dev use, not yet safe for in-place upgrades)
+- [ ] RAGAS evaluator integration
+- [ ] Pattern-level analysis across a query batch (beyond per-query diagnosis)
+- [ ] API key authentication for non-localhost deployments
 
 ---
 

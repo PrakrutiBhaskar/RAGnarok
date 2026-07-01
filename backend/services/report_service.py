@@ -5,7 +5,6 @@ Report service — builds structured DiagnosisReport and renders Markdown.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +15,7 @@ from backend.models.session import (
     QueryDiagnosisResult,
     Recommendation,
 )
+from backend.timeutils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class ReportService:
         return DiagnosisReport(
             session_id=session.id,
             pipeline_name=pipeline_name,
-            generated_at=datetime.utcnow(),
+            generated_at=utcnow(),
             status=session.status,
             summary=summary,
             query_diagnoses=query_diagnoses,

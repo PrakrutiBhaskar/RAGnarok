@@ -5,9 +5,9 @@ Creates session records, dispatches per-query diagnosis, aggregates results.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -21,7 +21,12 @@ from backend.core.compound_classifier import CompoundClassifier
 from backend.core.generation_diagnostics import GenerationDiagnosticEngine
 from backend.core.recommendation_engine import RecommendationEngine
 from backend.core.retrieval_diagnostics import RetrievalDiagnosticEngine
-from backend.db.orm_models import DiagnosisSessionORM, QueryDiagnosisORM, RecommendationORM
+from backend.db.orm_models import (
+    DiagnosisSessionORM,
+    PipelineConfigCacheORM,
+    QueryDiagnosisORM,
+    RecommendationORM,
+)
 from backend.models.config import PipelineConfig, QueryBatch
 from backend.models.session import (
     DiagnosisSession,
@@ -30,11 +35,21 @@ from backend.models.session import (
     SessionStatusResponse,
 )
 from backend.security.secret_scrubber import scrub_dict, scrub_error_message
+from backend.timeutils import utcnow
 
 logger = logging.getLogger(__name__)
 
 
 class SessionService:
+    # _diagnose_query performs no DB I/O — it's pure adapter calls (embed,
+    # retrieve, generate). That makes it safe to run several in parallel via
+    # a semaphore, even though the *saving* of results below stays strictly
+    # sequential (a single AsyncSession is not safe for concurrent use).
+    # This was previously a fully serial `await` loop despite every step in
+    # the path already being async, so a 100-query batch could take minutes
+    # of pure LLM-round-trip latency with zero parallelism.
+    _MAX_CONCURRENT_QUERIES = 5
+
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
@@ -77,10 +92,11 @@ class SessionService:
         redact_pii: bool = False,
     ) -> DiagnosisSessionORM:
         config_snapshot = scrub_dict(pipeline_config.model_dump())
+        fingerprint = pipeline_config.fingerprint()
 
         orm = DiagnosisSessionORM(
             id=str(uuid4()),
-            pipeline_config_hash=pipeline_config.fingerprint(),
+            pipeline_config_hash=fingerprint,
             pipeline_config_snapshot=config_snapshot,
             query_count=len(query_batch.queries),
             status="pending",
@@ -93,10 +109,41 @@ class SessionService:
             top_k=pipeline_config.retrieval.top_k,
         )
         self._db.add(orm)
+        await self._track_pipeline_config_usage(pipeline_config, fingerprint)
         await self._db.commit()
         await self._db.refresh(orm)
         logger.info("Created session %s (%d queries)", orm.id, orm.query_count)
         return orm
+
+    async def _track_pipeline_config_usage(
+        self, pipeline_config: PipelineConfig, fingerprint: str
+    ) -> None:
+        """Upsert the pipeline_config_cache row for this fingerprint.
+
+        This table was fully schema-defined (first_seen/last_seen/
+        session_count + provider breakdown) but had zero call sites — it
+        exists to answer "which pipeline configs get diagnosed repeatedly,
+        and how often" for a future "frequently diagnosed pipelines" view,
+        not to cache a BM25 index (the schema has no column for that).
+        """
+        existing = await self._db.get(PipelineConfigCacheORM, fingerprint)
+        now = utcnow()
+        if existing is None:
+            self._db.add(PipelineConfigCacheORM(
+                hash=fingerprint,
+                first_seen=now,
+                last_seen=now,
+                session_count=1,
+                db_type=pipeline_config.vector_db.provider,
+                embedding_provider=pipeline_config.embedding.provider,
+                llm_provider=pipeline_config.llm.provider,
+                chunking_strategy=pipeline_config.chunking.strategy,
+                chunk_size=pipeline_config.chunking.chunk_size,
+                top_k=pipeline_config.retrieval.top_k,
+            ))
+        else:
+            existing.last_seen = now
+            existing.session_count += 1
 
     # ── Main diagnosis orchestration ─────────────────────────────────────────
 
@@ -152,15 +199,19 @@ class SessionService:
             )
             classifier = CompoundClassifier()
 
-            # Per-query diagnosis loop
+            # Per-query diagnosis: compute concurrently (bounded), persist
+            # sequentially and in original query order (SSE progress events
+            # and DB writes both need a stable, single-writer order).
             query_diagnoses: list[QueryDiagnosisResult] = []
             failed_queries = 0
 
-            for i, query_obj in enumerate(query_batch.queries):
-                try:
-                    qd = await self._diagnose_query(
+            semaphore = asyncio.Semaphore(self._MAX_CONCURRENT_QUERIES)
+
+            async def _diagnose_bounded(index: int, query_obj):
+                async with semaphore:
+                    return await self._diagnose_query(
                         session_id=session_id,
-                        query_index=i,
+                        query_index=index,
                         total=len(query_batch.queries),
                         query_obj=query_obj,
                         retrieval_engine=retrieval_engine,
@@ -168,16 +219,28 @@ class SessionService:
                         classifier=classifier,
                         redact_pii=redact_pii,
                     )
-                    query_diagnoses.append(qd)
-                    await self._save_query_diagnosis(session_id, qd)
-                    self._publish_progress(session_id, i, len(query_batch.queries), qd)
 
-                except Exception as e:
+            results = await asyncio.gather(
+                *(
+                    _diagnose_bounded(i, query_obj)
+                    for i, query_obj in enumerate(query_batch.queries)
+                ),
+                return_exceptions=True,
+            )
+
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
                     logger.error(
                         "Session %s: query %d failed: %s",
-                        session_id, i, scrub_error_message(e),
+                        session_id, i, scrub_error_message(result),
                     )
                     failed_queries += 1
+                    continue
+
+                qd = result
+                query_diagnoses.append(qd)
+                await self._save_query_diagnosis(session_id, qd)
+                self._publish_progress(session_id, i, len(query_batch.queries), qd)
 
             # Aggregate and save recommendations
             rec_engine = RecommendationEngine()
@@ -340,7 +403,7 @@ class SessionService:
         session = result.scalar_one_or_none()
         if session:
             session.status = status
-            session.updated_at = datetime.utcnow()
+            session.updated_at = utcnow()
             if overall_confidence is not None:
                 session.overall_confidence = overall_confidence
             await self._db.commit()
@@ -359,6 +422,12 @@ class SessionService:
         return max(dist, key=lambda k: dist[k])
 
     # ── SSE publishing helpers ────────────────────────────────────────────────
+    # Best-effort by design: the dashboard's live progress view should never
+    # be able to crash an actual diagnosis run. But silently swallowing every
+    # exception here made "why isn't the dashboard updating" undebuggable —
+    # log at debug level so the failure is traceable without being noisy
+    # (SSE publish is called once per query, so this must never be `logger.warning`
+    # or louder in the hot path).
 
     def _publish_progress(self, session_id, i, total, qd):
         try:
@@ -373,8 +442,8 @@ class SessionService:
                 diagnosis=qd.final_diagnosis,
                 confidence=qd.confidence_score,
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Session %s: SSE progress publish failed: %s", session_id, e)
 
     def _publish_complete(self, session_id, total):
         try:
@@ -385,8 +454,8 @@ class SessionService:
                 session_id=session_id,
                 total_queries=total,
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Session %s: SSE completion publish failed: %s", session_id, e)
 
     def _publish_error(self, session_id, error):
         try:
@@ -397,8 +466,8 @@ class SessionService:
                 session_id=session_id,
                 error=error,
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Session %s: SSE error publish failed: %s", session_id, e)
 
     # ── Query methods ─────────────────────────────────────────────────────────
 

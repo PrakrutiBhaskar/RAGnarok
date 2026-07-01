@@ -5,9 +5,9 @@ Validated against JSON Schema before any diagnostic work begins.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ── Supported provider enums ────────────────────────────────────────────────
@@ -173,8 +173,8 @@ class PipelineConfig(BaseModel):
         serialized = json.dumps(config_dict, sort_keys=True, default=str)
         return hashlib.sha256(serialized.encode()).hexdigest()[:64]
 
-    class Config:
-        json_schema_extra: dict[str, Any] = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Customer Support RAG Pipeline",
                 "vector_db": {
@@ -198,6 +198,7 @@ class PipelineConfig(BaseModel):
                 },
             }
         }
+    )
 
 
 # ── Query input models ────────────────────────────────────────────────────────
@@ -208,12 +209,6 @@ class FailingQuery(BaseModel):
     query: str = Field(..., min_length=1, max_length=4096)
     expected_answer: str | None = Field(None, max_length=8192)
     actual_answer: str | None = Field(None, max_length=8192)
-
-    # Pre-retrieved chunks (optional; tool will re-retrieve regardless)
-    retrieved_chunks: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="Chunks already retrieved by the user's pipeline (for reference/comparison)",
-    )
 
 
 class QueryBatch(BaseModel):

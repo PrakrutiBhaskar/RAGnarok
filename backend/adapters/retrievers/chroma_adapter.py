@@ -5,6 +5,7 @@ Supports both local (persist_directory) and HTTP (host/port) modes.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -27,7 +28,14 @@ class ChromaAdapter(RetrieverAdapter):
         self._collection: Any = None
 
     async def _ensure_client(self) -> None:
-        """Lazy-initialize Chroma client on first use."""
+        """Lazy-initialize Chroma client on first use.
+
+        The chromadb SDK is fully synchronous. Constructing the client and
+        fetching the collection both perform blocking network I/O, so this
+        runs on a worker thread via run_in_executor to avoid stalling the
+        asyncio event loop (and therefore every other concurrent request —
+        including unrelated sessions' SSE streams and health checks).
+        """
         if self._client is not None:
             return
 
@@ -39,20 +47,24 @@ class ChromaAdapter(RetrieverAdapter):
             ) from e
 
         cfg = self._config
-        try:
+
+        def _connect() -> tuple[Any, Any]:
             if cfg.persist_directory:
-                # Local persistent client
-                self._client = chromadb.PersistentClient(path=cfg.persist_directory)
+                client = chromadb.PersistentClient(path=cfg.persist_directory)
                 logger.debug("ChromaAdapter: connected to local client at %s", cfg.persist_directory)
             else:
-                # HTTP client
                 host = cfg.host or "localhost"
                 port = cfg.port or 8000
-                self._client = chromadb.HttpClient(host=host, port=port)
+                client = chromadb.HttpClient(host=host, port=port)
                 logger.debug("ChromaAdapter: connected to HTTP client at %s:%s", host, port)
 
-            self._collection = self._client.get_collection(name=cfg.collection_name)
+            collection = client.get_collection(name=cfg.collection_name)
             logger.debug("ChromaAdapter: using collection '%s'", cfg.collection_name)
+            return client, collection
+
+        try:
+            loop = asyncio.get_event_loop()
+            self._client, self._collection = await loop.run_in_executor(None, _connect)
 
         except Exception as e:
             err_str = str(e).lower()
@@ -76,12 +88,16 @@ class ChromaAdapter(RetrieverAdapter):
         """Query Chroma by embedding vector and return top_k results."""
         await self._ensure_client()
 
-        try:
-            results = self._collection.query(
+        def _query() -> Any:
+            return self._collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
                 include=["documents", "metadatas", "distances"],
             )
+
+        try:
+            loop = asyncio.get_event_loop()
+            results = await loop.run_in_executor(None, _query)
         except Exception as e:
             raise AdapterUnavailableError("chroma", "query", str(e)) from e
 
@@ -112,7 +128,8 @@ class ChromaAdapter(RetrieverAdapter):
         """Check if Chroma is reachable and collection exists."""
         try:
             await self._ensure_client()
-            self._collection.count()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._collection.count)
             return True
         except Exception as e:
             logger.warning("ChromaAdapter health check failed: %s", e)
@@ -122,14 +139,17 @@ class ChromaAdapter(RetrieverAdapter):
         """Fetch all chunks for BM25 oracle indexing."""
         await self._ensure_client()
 
-        try:
+        def _fetch() -> Any:
             total = self._collection.count()
             fetch_limit = min(total, limit)
-
-            results = self._collection.get(
+            return total, self._collection.get(
                 limit=fetch_limit,
                 include=["documents", "metadatas"],
             )
+
+        try:
+            loop = asyncio.get_event_loop()
+            total, results = await loop.run_in_executor(None, _fetch)
 
             chunks: list[dict[str, Any]] = []
             documents = results.get("documents", [])
