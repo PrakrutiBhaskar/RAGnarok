@@ -51,6 +51,12 @@ class VectorDBConfig(BaseModel):
 class EmbeddingConfig(BaseModel):
     """Embedding model configuration."""
 
+    # model_id collides with Pydantic's reserved "model_" prefix (used for
+    # its own internals like model_config, model_dump, etc.) — it's a
+    # legitimate field name here (the embedding model's identifier), not
+    # a Pydantic internal, so the collision is silenced explicitly.
+    model_config = ConfigDict(protected_namespaces=())
+
     provider: EmbeddingProvider
     model_id: str = Field(..., min_length=1, description="Model identifier (e.g. text-embedding-3-small)")
     dimensions: int | None = Field(None, ge=64, le=8192, description="Output dimensions (if configurable)")
@@ -61,6 +67,8 @@ class EmbeddingConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     """LLM configuration for generation diagnostics (oracle injection)."""
+
+    model_config = ConfigDict(protected_namespaces=())
 
     provider: LLMProvider
     model_id: str = Field(..., min_length=1, description="Model identifier (e.g. gpt-4o-mini)")
