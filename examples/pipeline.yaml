@@ -1,0 +1,41 @@
+name: Groq-Only Demo Pipeline
+description: >
+  Zero-OpenAI-key setup: local Chroma + local HuggingFace embeddings + Groq
+  for generation. Only GROQ_API_KEY is required in your environment.
+
+vector_db:
+  provider: chroma
+  collection_name: demo_docs
+  persist_directory: ./chroma_data   # local on-disk Chroma, no server needed
+
+embedding:
+  provider: huggingface
+  model_id: all-MiniLM-L6-v2         # runs locally, downloads once (~90MB), no API key
+  device: cpu
+
+llm:
+  provider: groq
+  model_id: llama-3.3-70b-versatile  # free tier on Groq
+  temperature: 0.0
+  max_tokens: 1024
+
+chunking:
+  strategy: recursive
+  chunk_size: 512
+  chunk_overlap: 64
+
+retrieval:
+  top_k: 5
+  search_type: similarity
+
+prompt:
+  template: |
+    Answer the question using only the context below. If the answer isn't
+    in the context, say "I don't know."
+
+    Context:
+    {context}
+
+    Question: {question}
+
+    Answer:

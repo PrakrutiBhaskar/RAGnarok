@@ -21,6 +21,12 @@ from backend.cli import _load_json, _load_yaml
 
 
 class TestLoadYamlRejectsPickle:
+    def test_missing_file_gives_clean_error_not_traceback(self, tmp_path):
+        path = tmp_path / "does_not_exist.yaml"
+
+        with pytest.raises(typer.Exit):
+            _load_yaml(path)
+
     def test_rejects_pickle_file_disguised_as_yaml(self, tmp_path):
         path = tmp_path / "pipeline.yaml"
         path.write_bytes(pickle.dumps({"name": "malicious"}))
@@ -37,6 +43,12 @@ class TestLoadYamlRejectsPickle:
 
 
 class TestLoadJsonRejectsPickle:
+    def test_missing_file_gives_clean_error_not_traceback(self, tmp_path):
+        path = tmp_path / "does_not_exist.json"
+
+        with pytest.raises(typer.Exit):
+            _load_json(path)
+
     def test_rejects_pickle_file_disguised_as_json(self, tmp_path):
         path = tmp_path / "queries.json"
         path.write_bytes(pickle.dumps([{"query": "malicious"}]))

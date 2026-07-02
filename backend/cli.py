@@ -28,6 +28,10 @@ err_console = Console(stderr=True)
 
 
 def _load_yaml(path: Path) -> dict:
+    if not path.exists():
+        err_console.print(f"[red]Config file not found: {path}[/red]")
+        raise typer.Exit(1)
+
     try:
         import yaml
     except ImportError:
@@ -46,6 +50,10 @@ def _load_yaml(path: Path) -> dict:
 
 
 def _load_json(path: Path) -> list:
+    if not path.exists():
+        err_console.print(f"[red]Queries file not found: {path}[/red]")
+        raise typer.Exit(1)
+
     from backend.security.pickle_detector import PickleDetectedError, check_bytes
     try:
         check_bytes(path.read_bytes(), source=str(path))

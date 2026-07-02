@@ -1,0 +1,14 @@
+[
+  {
+    "query": "How do I reset my password?",
+    "expected_answer": "Go to Settings > Security > Reset Password and follow the emailed link."
+  },
+  {
+    "query": "What is the refund policy?",
+    "expected_answer": "Refunds are processed within 5 business days of the request."
+  },
+  {
+    "query": "Do you support single sign-on?",
+    "expected_answer": "Yes, SSO via SAML 2.0 is available on the Enterprise plan."
+  }
+]
